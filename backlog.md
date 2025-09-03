@@ -1,4 +1,4 @@
-# Backlog du projet "Optimisation Sante+"
+# Backlog du projet "EcoTraining Platform"
 
 ## USER STORIES
 
