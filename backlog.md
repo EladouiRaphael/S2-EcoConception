@@ -1,46 +1,42 @@
-# Backlog du projet "Optimisation Sante+"
+# Backlog du projet "EcoTraining Platform"
 
 ## USER STORIES
 
 ---
 
-### Story 1 : Chargement initial plus rapide
+### Story 1 : Chargement rapide sur connexion lente
 
-**En tant que** nouvel utilisateur web,  
-**je veux** que l’écran d’accueil charge en moins de 1,5 s  
-**afin de** ne pas décrocher lors d’un pic de réseau lent.
+**En tant que** utilisateur en zone blanche avec connexion 3G,  
+**je veux** que l'application se charge rapidement même avec peu de bande passante  
+**afin de** pouvoir accéder aux informations sans attendre des minutes.
 
-- 🎯 Objectif : temps de chargement < 1500 ms
-- 🧱 BP associée : réduire taille des ressources / lazy-loading
-- 🛠️ KPI : LCP sur web (Lighthouse)
-- 📅 Tag roadmap : M2
-
----
-
-### Story 2 : Réduction poids images
-
-**En tant que** utilisateur récurrent,  
-**je veux** que les visuels du dashboard soient plus légers  
-**afin de** économiser de la data sur mon forfait.
-
-- 🎯 Objectif : 80% des images converties en WebP
-- 🧱 BP associée : compression d’images / formats modernes
-- 🛠️ KPI : poids total dossier `/assets` < 2 Mo
-- 📅 Tag roadmap : M3
+- 🎯 Objectif : temps de chargement < 3s sur 3G
+- 🧱 BP associée : réduction taille bundle / lazy loading
+- 🛠️ KPI : LCP sur connexion lente, taille bundle total
+- 📅 Tag roadmap : M5
 
 ---
 
-### Story 3 : Accessibilité améliorée
+### Story 2 : Navigation fluide sans rechargement
 
-**En tant que** utilisateur malvoyant,  
-**je veux** que les contrastes texte/fond soient conformes AA  
-**afin de** pouvoir utiliser l’app sans difficulté visuelle.
+**En tant que** utilisateur qui navigue fréquemment entre les pages,  
+**je veux** que les ressources soient mises en cache pour éviter les rechargements  
+**afin de** avoir une expérience fluide et rapide.
 
-- 🎯 Objectif : conformité AA WCAG
-- 🧱 BP associée : respect contrastes (RGESN 6.3)
-- 🛠️ KPI : score accessibilité Lighthouse > 90
-- 📅 Tag roadmap : M4
-
-...
+- 🎯 Objectif : navigation instantanée entre pages
+- 🧱 BP associée : mise en cache des ressources statiques
+- 🛠️ KPI : temps de navigation, nombre de requêtes réseau
+- 📅 Tag roadmap : M6
 
 ---
+
+### Story 3 : Application respectueuse de l'environnement
+
+**En tant que** utilisateur soucieux de l'impact environnemental,  
+**je veux** que l'application consomme moins de ressources  
+**afin de** réduire mon empreinte carbone numérique.
+
+- 🎯 Objectif : consommation énergétique minimale
+- 🧱 BP associée : optimisation des images et du code
+- 🛠️ KPI : score éco-index, consommation batterie
+- 📅 Tag roadmap : M7
