@@ -1,21 +1,44 @@
 import React, { useEffect, useRef, useState } from 'react'
 import {
-  Activity,
-  Cpu,
-  Database,
-  Globe,
-  MemoryStick,
   Timer,
   Zap,
-  Layers,
-  FileText,
-  FilePlus,
   Image,
-  Cloud
+  Armchair,
+  FileSearch,
+  Search,
+  AlertTriangle,
+  Train,
+  BadgeEuro,
+  Circle,
+  Network
 } from 'lucide-react'
 import * as THREE from 'three'
 import _ from 'lodash'
 
+// ... (Les types Train, Station, Stat, AppData et les constantes limits/color restent identiques)
+type Train = {
+  id: string;
+  departure: string;
+  arrival: string;
+  departureTime: string;
+  arrivalTime: string;
+  price: number;
+  seatsAvailable: number;
+  details: {
+    trainNumber: string;
+    duration: string;
+    class: string;
+    amenities: string[];
+  };
+}
+type Station = {
+  id: string;
+  nameStation: string;
+  region: string;
+  transports: (string | number)[];
+  transportType: 'gare' | 'aeroport' | 'port';
+  icon: string;
+};
 type Stat = {
   bundle: number
   weight: number
@@ -30,7 +53,12 @@ type Stat = {
   rps: number
   pl: number
 }
-
+type AppData = {
+  seatsNumber: number;
+  updatePrice: number;
+  trains: Train[];
+  stations: Station[];
+}
 const limits = {
   weight: [512_000, 1_048_576],
   dom: [1_000, 2_000],
@@ -40,19 +68,19 @@ const limits = {
   img: [307_200, 716_800],
   cache: [0.6, 0.4]
 }
-
 const color = (v: number, [g, y]: number[], inv = false) =>
   inv
     ? v >= g
       ? 'border-green-500/30 bg-green-500/20'
       : v >= y
-      ? 'border-yellow-500/30 bg-yellow-500/20'
-      : 'border-red-500/30 bg-red-500/20'
+        ? 'border-yellow-500/30 bg-yellow-500/20'
+        : 'border-red-500/30 bg-red-500/20'
     : v <= g
-    ? 'border-green-500/30 bg-green-500/20'
-    : v <= y
-    ? 'border-yellow-500/30 bg-yellow-500/20'
-    : 'border-red-500/30 bg-red-500/20'
+      ? 'border-green-500/30 bg-green-500/20'
+      : v <= y
+        ? 'border-yellow-500/30 bg-yellow-500/20'
+        : 'border-red-500/30 bg-red-500/20'
+
 
 export default function App() {
   const [stats, setStats] = useState<Stat>({
@@ -67,14 +95,68 @@ export default function App() {
     memory: 0,
     load: 0,
     rps: 0,
-    pl: 0
+    pl: 0,
   })
+
   const [ready, setReady] = useState(false)
+  const [appData, setAppData] = useState<AppData>({
+    seatsNumber: 22,
+    updatePrice: 96,
+    trains: [],
+    stations: [],
+  });
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const injectedRef = useRef(false)
   const intervalRef = useRef<number>()
 
+  // NOUVEL EFFET UNIQUE POUR LES DONNÉES EN TEMPS RÉEL AVEC SSE
+  useEffect(() => {
+    // 1. On crée une instance EventSource qui se connecte à notre route SSE
+    const eventSource = new EventSource('http://localhost:5001/api/events');
+
+    // 2. On écoute les événements spécifiques envoyés par le serveur
+    eventSource.addEventListener('seats', (e) => {
+      const { seats } = JSON.parse(e.data);
+      setAppData(prev => ({ ...prev, seatsNumber: seats }));
+    });
+
+    eventSource.addEventListener('price', (e) => {
+      const { price } = JSON.parse(e.data);
+      setAppData(prev => ({ ...prev, updatePrice: price }));
+    });
+
+    eventSource.addEventListener('trains', (e) => {
+      const receivedTrains: Train[] = JSON.parse(e.data);
+      setAppData(prev => ({ ...prev, trains: receivedTrains }));
+    });
+
+    eventSource.addEventListener('stations', (e) => {
+      const receivedStations: Station[] = JSON.parse(e.data);
+      setAppData(prev => ({ ...prev, stations: receivedStations }));
+    });
+
+    // Gestion des erreurs de connexion
+    eventSource.onerror = (err) => {
+      console.error("Erreur de connexion SSE:", err);
+      eventSource.close(); // On ferme en cas d'erreur
+    };
+
+    // 3. La fonction de nettoyage ferme la connexion quand le composant est démonté
+    return () => {
+      eventSource.close();
+    };
+  }, []); // Le tableau de dépendances vide assure que cet effet ne s'exécute qu'une fois
+
+
+  // LES ANCIENS useEffect pour le polling sont supprimés
+  // useEffect(() => { /* update seats */ }, []);
+  // useEffect(() => { /* update price */ }, []);
+  // useEffect(() => { /* update trains */ }, []);
+  // useEffect(() => { /* update stations */ }, []);
+
+
+  // ... (Le reste du code du composant reste identique)
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -126,7 +208,6 @@ export default function App() {
       })
     }
   }, [])
-
   useEffect(() => {
     if (injectedRef.current) return
     injectedRef.current = true
@@ -145,16 +226,12 @@ export default function App() {
       ? loadAssets()
       : window.addEventListener('load', loadAssets, { once: true })
   }, [])
-
   useEffect(() => {
     const startTime = performance.now();
-
     const computeStats = () => {
       const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
       const resources = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
-
       if (!nav) return;
-
       const totalWeight = nav.transferSize + resources.reduce((sum, r) => sum + (r.transferSize || 0), 0);
       const jsWeight = resources.filter(r => r.initiatorType === 'script').reduce((sum, r) => sum + (r.transferSize || 0), 0);
       const cssWeight = resources.filter(r => r.initiatorType === 'link').reduce((sum, r) => sum + (r.transferSize || 0), 0);
@@ -168,7 +245,6 @@ export default function App() {
         .reduce((sum, r) => sum + (r.transferSize || 0), 0);
       const totalEncoded = nav.encodedBodySize + resources.reduce((sum, r) => sum + (r.encodedBodySize || 0), 0);
       const cacheRatio = totalEncoded ? 1 - totalWeight / totalEncoded : 0;
-
       setStats(s => ({
         ...s,
         bundle: nav.transferSize,
@@ -183,25 +259,21 @@ export default function App() {
       }));
       setReady(true);
     };
-
     if (document.readyState === 'complete') {
       computeStats();
     } else {
       window.addEventListener('load', computeStats, { once: true });
     }
-
     // Ajout du rafraîchissement périodique
     const interval = setInterval(computeStats, 2000);
-
     return () => clearInterval(interval);
   }, []);
-
   useEffect(() => {
     const po = new PerformanceObserver(list => {
       const res = list.getEntries() as PerformanceResourceTiming[]
       const added = res.reduce((a, b) => a + (b.transferSize || 0), 0)
       const jsAdd = res.filter(r => r.initiatorType === 'script').reduce((a, b) => a + (b.transferSize || 0), 0)
-      const cssAdd = res.filter(r => r.initiatorType === 'link' || /\.css$/i.test(r.name)).reduce((a, b) => a + (b.transferSize || 0), 0) 
+      const cssAdd = res.filter(r => r.initiatorType === 'link' || /\.css$/i.test(r.name)).reduce((a, b) => a + (b.transferSize || 0), 0)
       const isImg = (r: PerformanceResourceTiming) => r.initiatorType === 'img' || r.initiatorType === 'css' || /\.(avif|jpe?g|png|gif|webp|svg)$/i.test(r.name);
       const imgAdd = res.filter(isImg).reduce((a, b) => a + (b.transferSize || 0), 0);
       const encAdd = res.reduce((a, b) => a + (b.encodedBodySize || 0), 0)
@@ -215,20 +287,16 @@ export default function App() {
     po.observe({ type: 'resource', buffered: true })
     return () => po.disconnect()
   }, [])
-
   useEffect(() => {
     if (intervalRef.current) return
-
     intervalRef.current = window.setInterval(async () => {
       for (let i = 0; i < 2; i++) {
         fetch(`http://localhost:5001/api/payload?${Date.now()}_${i}`)
       }
-
       try {
         const { memory, load, rps } = await fetch('http://localhost:5001/api/server', {
           cache: 'no-store'
         }).then(r => r.json())
-
         setStats(s => ({
           ...s,
           memory: Math.ceil(memory / 1_048_576),
@@ -239,7 +307,6 @@ export default function App() {
         console.warn('Erreur lors du fetch des stats serveur', err)
       }
     }, 1_000)
-
     return () => clearInterval(intervalRef.current)
   }, [])
 
@@ -254,30 +321,47 @@ export default function App() {
     )
 
   return (
+    // Le JSX reste identique
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white">
-      <div className="fixed inset-0 opacity-10 pointer-events-none">
-        <img src="http://localhost:5001/static/large.jpg" className="absolute inset-0 w-full h-full object-cover mix-blend-overlay" />
-      </div>
+      {/* ... */}
       <div className="relative z-10 container mx-auto px-6 py-12">
         <header className="text-center mb-16">
-          <h1 className="text-6xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent mb-6 animate-pulse">
+          <h1 className="text-6xl font-bold bg-clip-text">
             EcoTraining Platform
           </h1>
           <p className="text-xl text-slate-300 max-w-3xl mx-auto">Plateforme d'entraînement avancée pour l'optimisation web et l'éco-conception</p>
         </header>
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 mb-16">
-          <Card icon={<Database className="w-8 h-8 text-purple-400" />} title="Poids HTML" value={`${(stats.bundle / 1_024).toFixed(0)} kB`} tone={color(stats.bundle, limits.weight)} tip="transferSize du document" />
-          <Card icon={<Globe className="w-8 h-8 text-blue-400" />} title="Poids page" value={`${(stats.weight / 1_024).toFixed(0)} kB`} tone={color(stats.weight, limits.weight)} tip="somme transferSize" />
-          <Card icon={<Layers className="w-8 h-8 text-teal-400" />} title="DOM" value={stats.dom} tone={color(stats.dom, limits.dom)} tip="nombre de nœuds" />
-          <Card icon={<Activity className="w-8 h-8 text-green-400" />} title="Ressources" value={stats.resources} tone={color(stats.resources, limits.resources)} tip="entries PerformanceResourceTiming" />
-          <Card icon={<FileText className="w-8 h-8 text-fuchsia-400" />} title="JS" value={`${(stats.js / 1_024).toFixed(0)} kB`} tone={color(stats.js, limits.js)} />
-          <Card icon={<FilePlus className="w-8 h-8 text-sky-400" />} title="CSS" value={`${(stats.img / 1024).toFixed(1)} kB`} tone={color(stats.css, limits.css)} />
-          <Card icon={<Image className="w-8 h-8 text-amber-400" />} title="Images" value={`${(stats.img / 1_024).toFixed(0)} kB`} tone={color(stats.img, limits.img)} />
-          <Card icon={<Cloud className="w-8 h-8 text-emerald-400" />} title="Cache hit" value={`${Math.round(stats.cache * 100)} %`} tone={color(stats.cache, limits.cache, true)} />
-          <Card icon={<MemoryStick className="w-8 h-8 text-red-400" />} title="RAM serveur" value={`${stats.memory} MB`} tone="bg-white/10 border-white/20" />
-          <Card icon={<Cpu className="w-8 h-8 text-indigo-400" />} title="CPU" value={stats.load} tone="bg-white/10 border-white/20" />
-          <Card icon={<Activity className="w-8 h-8 text-lime-400" />} title="RPS" value={stats.rps} tone="bg-white/10 border-white/20" />
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
           <Card icon={<Timer className="w-8 h-8 text-yellow-400" />} title="Load page" value={`${stats.pl} ms`} tone="bg-white/10 border-white/20" />
+          <CardEmpty tone="bg-white/10 border-white/20" />
+          <CardEmpty tone="bg-white/10 border-white/20" />
+          <CardEmpty tone="bg-white/10 border-white/20" />
+          <CardEmpty tone="bg-white/10 border-white/20" />
+          <CardEmpty tone="bg-white/10 border-white/20" />
+          <Card icon={<Network className="w-8 h-8 text-yellow-400" />} title="Simulation" value="requêtes" tone="bg-white/10 border-white/20" />
+          <Card icon={<Image className="w-8 h-8 text-amber-400" />} title="Bon plan" value="A la une" tone={color(stats.img, limits.img)} />
+          <Card icon={<AlertTriangle className="w-8 h-8 text-teal-400" />} title="Alertes" value="infos" tone={color(stats.dom, limits.dom)} tip="nombre de nœuds" />
+          <Card icon={<Search className="w-8 h-8 text-purple-400" />} title="Gares d'arrivée (auto-complétion)" value={appData.stations.length + " objets"} tone={color(stats.weight, limits.weight)} tip="transferSize du document" />
+          <Card icon={<Search className="w-8 h-8 text-blue-400" />} title="Gares de départ (auto-complétion)" value={appData.stations.length + " objets"} tone={color(stats.weight, limits.weight)} tip="somme transferSize" />
+          <Card icon={<Train className="w-8 h-8 text-emerald-400" />} title="Liste des trains" value={appData.trains.length + " objets"} tone="bg-white/10 border-white/20" />
+          <Card icon={<Armchair className="w-8 h-8 text-indigo-400" />} title="Nombre de places restantes" value={appData.seatsNumber} tone="bg-white/10 border-white/20" />
+          <Card icon={<Circle className="w-8 h-8 text-sky-400" />} title="Train/ statut réservation" value="ouvert" tone="bg-white/10 border-white/20" />
+          <Card icon={<BadgeEuro className="w-8 h-8 text-red-400" />} title="Mise à jour des prix" value={appData.updatePrice + " €"} tone="bg-white/10 border-white/20" />
+          <Card icon={<FileSearch className="w-8 h-8 text-lime-400" />} title="Détail d’un trajet" value="9 propriétés" tone={color(stats.css, limits.css)} />
+          <Card icon={<Armchair className="w-8 h-8 text-yellow-400" />} title="Attribution place libre" value="siège 22" tone={color(stats.css, limits.css)} />
+          <Card icon={<Network className="w-8 h-8 text-yellow-400" />} title="Simulation" value="requêtes" tone="bg-white/10 border-white/20" />
+          <CardWithImage title="Train complet" imageUrl="https://images.unsplash.com/photo-1626544001303-f60b92396d47?q=80&w=1742&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" />
+          <CardWithImage title="Envie de prolonger votre été ?" imageUrl="https://images.unsplash.com/photo-1473625247510-8ceb1760943f?q=80&w=1711&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" />
+          <CardWithImage title="Nos idées pour les vacances" imageUrl="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1746&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" />
+          <CardWithImage title="Vente flash" imageUrl="https://images.unsplash.com/photo-1539635278303-d4002c07eae3?q=80&w=1740&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" />
+          <CardWithImage title="Où partir ?" imageUrl="https://images.unsplash.com/photo-1530789253388-582c481c54b0?q=80&w=1740&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" />
+          <CardWithImage title="Les abonnements" imageUrl="https://images.unsplash.com/photo-1670888664952-efff442ec0d2?q=80&w=2340&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" />
+          <CardWithImage title="Train complet" imageUrl="https://images.unsplash.com/photo-1626544001303-f60b92396d47?q=80&w=1742&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" />
+          <CardWithImage title="Envie de prolonger votre été ?" imageUrl="https://images.unsplash.com/photo-1473625247510-8ceb1760943f?q=80&w=1711&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" />
+          <CardWithImage title="Nos idées pour les vacances" imageUrl="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1746&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" />
+          <CardWithImage title="Vente flash" imageUrl="https://images.unsplash.com/photo-1539635278303-d4002c07eae3?q=80&w=1740&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" />
+          <CardWithImage title="Où partir ?" imageUrl="https://images.unsplash.com/photo-1530789253388-582c481c54b0?q=80&w=1740&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" />
+          <CardWithImage title="Les abonnements" imageUrl="https://images.unsplash.com/photo-1670888664952-efff442ec0d2?q=80&w=2340&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" />
         </section>
         <section className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20 mb-16">
           <div className="flex items-center gap-4 mb-6">
@@ -302,6 +386,29 @@ function Card({ icon, title, value, tone, tip }: { icon: React.ReactNode; title:
         <span className="text-3xl font-bold text-white">{value}</span>
       </div>
       <h3 className="text-lg font-semibold text-white">{title}</h3>
+    </div>
+  )
+}
+function CardEmpty({ tone }: { tone: string }) {
+  return (
+    <div className={`backdrop-blur-lg rounded-2xl p-8 border hover:bg-white/15 hover:scale-105 transition ${tone}`} >
+    </div>
+  )
+}
+function CardWithImage({ title, imageUrl }: { title: string; imageUrl: string }) {
+  return (
+    <div className="relative p-6 rounded-lg border border-white/20 overflow-hidden h-[300px]">
+      <img
+        src={imageUrl}
+        className="absolute inset-0 w-full h-full object-cover -z-10"
+        alt=""
+      />
+      <div className="relative z-10 flex items-center gap-4">
+        <div>
+          <span className="text-3xl font-bold text-white">{title}</span>
+        </div>
+      </div>
+      <h3 className="text-lg font-semibold text-white">{"simulation"}</h3>
     </div>
   )
 }
