@@ -1,20 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react'
-import {
-  Activity,
-  Cpu,
-  Database,
-  Globe,
-  MemoryStick,
-  Timer,
-  Zap,
-  Layers,
-  FileText,
-  FilePlus,
-  Image,
-  Cloud
-} from 'lucide-react'
-import * as THREE from 'three'
-import _ from 'lodash'
+import React, { useEffect, useRef, useState, lazy, Suspense } from 'react'
+import { MemoryStick, Cpu, Activity, BarChart3, Zap, Globe, Clock, HardDrive, Database, Layers, FileText, FilePlus, Image, Cloud, Timer } from 'lucide-react'
+import PreloadManager from './components/PreloadManager' // C4 - Preload intelligent
+
+// Lazy loading pour Three.js (RGESN 1.2)
+const ThreeScene = lazy(() => import('./components/ThreeScene'))
 
 type Stat = {
   bundle: number
@@ -38,7 +27,10 @@ const limits = {
   js: [153_600, 307_200],
   css: [51_200, 102_400],
   img: [307_200, 716_800],
-  cache: [0.6, 0.4]
+  cache: [0.6, 0.4],
+  memory: [100, 200], // MB - Vert: < 100MB, Jaune: 100-200MB, Rouge: > 200MB
+  load: [50, 80], // % - Vert: < 50%, Jaune: 50-80%, Rouge: > 80%
+  rps: [10, 20] // req/s - Vert: < 10, Jaune: 10-20, Rouge: > 20
 }
 
 const color = (v: number, [g, y]: number[], inv = false) =>
@@ -70,61 +62,18 @@ export default function App() {
     pl: 0
   })
   const [ready, setReady] = useState(false)
+  const [show3D, setShow3D] = useState(false)
 
-  const canvasRef = useRef<HTMLCanvasElement>(null)
   const injectedRef = useRef(false)
   const intervalRef = useRef<number>()
 
+  // RGESN 2.2 : Optimisation du rendu 3D - Chargement différé
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const scene = new THREE.Scene()
-    const camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.1, 1_000)
-    camera.position.z = 30
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
-    renderer.setSize(canvas.clientWidth || 640, canvas.clientHeight || 480)
-    renderer.setPixelRatio(window.devicePixelRatio)
-    const ambient = new THREE.AmbientLight(0xffffff, 0.3)
-    scene.add(ambient)
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8)
-    dir.position.set(25, 25, 25)
-    scene.add(dir)
-    for (let i = 0; i < 20; i++) {
-      const mat = new THREE.MeshPhongMaterial({ color: Math.random() * 0xffffff, shininess: 80 })
-      const geo = new THREE.BoxGeometry(1 + Math.random(), 1 + Math.random(), 1 + Math.random())
-      const cube = new THREE.Mesh(geo, mat)
-      cube.position.set((Math.random() - 0.5) * 50, (Math.random() - 0.5) * 50, (Math.random() - 0.5) * 50)
-      scene.add(cube)
-    }
-    const animate = () => {
-      let i = 0
-      scene.traverse((o: any) => {
-        if (o.isMesh) {
-          o.rotation.x += 0.002 * ((i % 3) + 1)
-          o.rotation.y += 0.003 * ((i % 4) + 1)
-        }
-        i++
-      })
-      renderer.render(scene, camera)
-      requestAnimationFrame(animate)
-    }
-    animate()
-    const onResize = _.throttle(() => {
-      camera.aspect = canvas.clientWidth / canvas.clientHeight
-      camera.updateProjectionMatrix()
-      renderer.setSize(canvas.clientWidth, canvas.clientHeight)
-    }, 200)
-    window.addEventListener('resize', onResize)
-    return () => {
-      window.removeEventListener('resize', onResize)
-      renderer.dispose()
-      scene.traverse((o: any) => {
-        if (o.geometry) o.geometry.dispose()
-        if (o.material) {
-          Array.isArray(o.material) ? o.material.forEach((m: any) => m.dispose()) : o.material.dispose()
-        }
-      })
-    }
+    const timer = setTimeout(() => {
+      setShow3D(true)
+    }, 2000) // Retarde le chargement 3D de 2 secondes
+
+    return () => clearTimeout(timer)
   }, [])
 
   useEffect(() => {
@@ -134,10 +83,10 @@ export default function App() {
       const h = document.head
       const link = document.createElement('link')
       link.rel = 'stylesheet'
-      link.href = 'http://localhost:5001/static/big.css'
+      link.href = 'https://disasters-web2.onrender.com/static/big.css'
       h.appendChild(link)
       const script = document.createElement('script')
-      script.src = 'http://localhost:5001/static/big.js'
+      script.src = 'https://disasters-web2.onrender.com/static/big.js'
       script.crossOrigin = 'anonymous'
       h.appendChild(script)
     }
@@ -169,6 +118,9 @@ export default function App() {
       const totalEncoded = nav.encodedBodySize + resources.reduce((sum, r) => sum + (r.encodedBodySize || 0), 0);
       const cacheRatio = totalEncoded ? 1 - totalWeight / totalEncoded : 0;
 
+      // Mesure correcte du temps de chargement
+      const loadTime = Math.round(performance.now() - startTime);
+
       setStats(s => ({
         ...s,
         bundle: nav.transferSize,
@@ -179,7 +131,7 @@ export default function App() {
         css: cssWeight || s.css,
         img: imgWeight || s.img,
         cache: cacheRatio,
-        pl: Math.round(performance.now() - startTime)
+        pl: loadTime
       }));
       setReady(true);
     };
@@ -189,11 +141,6 @@ export default function App() {
     } else {
       window.addEventListener('load', computeStats, { once: true });
     }
-
-    // Ajout du rafraîchissement périodique
-    const interval = setInterval(computeStats, 2000);
-
-    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -221,11 +168,11 @@ export default function App() {
 
     intervalRef.current = window.setInterval(async () => {
       for (let i = 0; i < 2; i++) {
-        fetch(`http://localhost:5001/api/payload?${Date.now()}_${i}`)
+        fetch(`https://disasters-web2.onrender.com/api/payload?${Date.now()}_${i}`)
       }
 
       try {
-        const { memory, load, rps } = await fetch('http://localhost:5001/api/server', {
+        const { memory, load, rps } = await fetch('https://disasters-web2.onrender.com/api/server', {
           cache: 'no-store'
         }).then(r => r.json())
 
@@ -243,6 +190,31 @@ export default function App() {
     return () => clearInterval(intervalRef.current)
   }, [])
 
+  // Enregistrement du Service Worker pour cache offline (C4)
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .then(registration => {
+          console.log('✅ Service Worker enregistré:', registration.scope)
+          
+          // Vérifier les mises à jour
+          registration.addEventListener('updatefound', () => {
+            const newWorker = registration.installing
+            if (newWorker) {
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  console.log('🔄 Nouvelle version du Service Worker disponible')
+                }
+              })
+            }
+          })
+        })
+        .catch(error => {
+          console.warn('⚠️ Erreur enregistrement Service Worker:', error)
+        })
+    }
+  }, [])
+
   if (!ready)
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-900 via-indigo-900 to-blue-900">
@@ -254,16 +226,37 @@ export default function App() {
     )
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white">
+    <div id="main-content" className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white">
+      {/* Image de fond fixe pour mettre la rosace en arrière-plan */}
       <div className="fixed inset-0 opacity-10 pointer-events-none">
-        <img src="http://localhost:5001/static/large.jpg" className="absolute inset-0 w-full h-full object-cover mix-blend-overlay" />
+        <img 
+          src="/static/large.jpg" 
+          className="absolute inset-0 w-full h-full object-cover mix-blend-overlay" 
+          loading="lazy"
+          alt="Background pattern"
+        />
       </div>
-      <div className="relative z-10 container mx-auto px-6 py-12">
-        <header className="text-center mb-16">
-          <h1 className="text-6xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent mb-6 animate-pulse">
-            EcoTraining Platform
+      
+      {/* C4 - Preload Manager pour optimisations avancées */}
+      <PreloadManager />
+      
+      <div className="relative z-10 max-w-7xl mx-auto px-6 py-12">
+        <header className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-red-400 mb-4">
+            Plateforme d'entraînement avancée
           </h1>
-          <p className="text-xl text-slate-300 max-w-3xl mx-auto">Plateforme d'entraînement avancée pour l'optimisation web et l'éco-conception</p>
+          <p className="text-xl text-gray-300 mb-4">
+            Optimisation web et éco-conception - C4 Implémentations Avancées
+          </p>
+          <div className="flex justify-center">
+            <a 
+              href="/dashboard-c5" 
+              className="inline-flex items-center space-x-2 bg-gradient-to-r from-green-500 to-blue-600 hover:from-green-600 hover:to-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-all duration-300 hover:scale-105 shadow-lg"
+            >
+              <span>🚀</span>
+              <span>Dashboard C5 - Mesure & Analyse</span>
+            </a>
+          </div>
         </header>
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 mb-16">
           <Card icon={<Database className="w-8 h-8 text-purple-400" />} title="Poids HTML" value={`${(stats.bundle / 1_024).toFixed(0)} kB`} tone={color(stats.bundle, limits.weight)} tip="transferSize du document" />
@@ -274,20 +267,26 @@ export default function App() {
           <Card icon={<FilePlus className="w-8 h-8 text-sky-400" />} title="CSS" value={`${(stats.img / 1024).toFixed(1)} kB`} tone={color(stats.css, limits.css)} />
           <Card icon={<Image className="w-8 h-8 text-amber-400" />} title="Images" value={`${(stats.img / 1_024).toFixed(0)} kB`} tone={color(stats.img, limits.img)} />
           <Card icon={<Cloud className="w-8 h-8 text-emerald-400" />} title="Cache hit" value={`${Math.round(stats.cache * 100)} %`} tone={color(stats.cache, limits.cache, true)} />
-          <Card icon={<MemoryStick className="w-8 h-8 text-red-400" />} title="RAM serveur" value={`${stats.memory} MB`} tone="bg-white/10 border-white/20" />
-          <Card icon={<Cpu className="w-8 h-8 text-indigo-400" />} title="CPU" value={stats.load} tone="bg-white/10 border-white/20" />
-          <Card icon={<Activity className="w-8 h-8 text-lime-400" />} title="RPS" value={stats.rps} tone="bg-white/10 border-white/20" />
+          <Card icon={<MemoryStick className="w-8 h-8 text-red-400" />} title="RAM serveur" value={`${stats.memory} MB`} tone={color(stats.memory, limits.memory)} />
+          <Card icon={<Cpu className="w-8 h-8 text-indigo-400" />} title="CPU" value={`${stats.load} %`} tone={color(stats.load, limits.load)} />
+          <Card icon={<Activity className="w-8 h-8 text-lime-400" />} title="RPS" value={stats.rps} tone={color(stats.rps, limits.rps)} />
           <Card icon={<Timer className="w-8 h-8 text-yellow-400" />} title="Load page" value={`${stats.pl} ms`} tone="bg-white/10 border-white/20" />
         </section>
-        <section className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20 mb-16">
-          <div className="flex items-center gap-4 mb-6">
-            <Zap className="w-8 h-8 text-yellow-400" />
-            <h2 className="text-2xl font-bold text-white">Visualisation 3D</h2>
+        <section className="bg-white/10 backdrop-blur-lg rounded-2xl p-12 border border-white/20 mb-24">
+          <div className="flex items-center gap-4 mb-8">
+            <Zap className="w-10 h-10 text-yellow-400" />
+            <h2 className="text-3xl font-bold text-white">⚡ Visualisation 3D</h2>
           </div>
-          <div className="flex justify-center">
-            <canvas ref={canvasRef} className="rounded-xl border border-white/20 shadow-2xl w-full h-96" />
+          <div className="flex justify-center mb-8">
+            <Suspense fallback={
+              <div className="w-full h-[500px] flex items-center justify-center">
+                <div className="animate-spin h-16 w-16 rounded-full border-b-2 border-white" />
+              </div>
+            }>
+              {show3D && <ThreeScene />}
+            </Suspense>
           </div>
-          <p className="text-slate-300 text-center mt-4">500 cubes tournants en temps réel</p>
+          <p className="text-slate-300 text-center text-lg">8 cubes optimisés en temps réel (RGESN 2.2)</p>
         </section>
       </div>
     </div>

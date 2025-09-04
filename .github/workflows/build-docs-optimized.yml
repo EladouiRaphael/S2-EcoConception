@@ -1,0 +1,223 @@
+name: Build et Génération des Documents Optimisé
+
+on:
+  # Désactivé temporairement pour éviter les conflits
+  # push:
+  #   branches: [ main, develop, feature/* ]
+  #   paths:
+  #     - 'UF-Zoom/docs/**'
+  #     - 'UF-Zoom/Slide-Oral.md'
+  #     - 'Themes/**'
+  #     - 'package.json'
+  # pull_request:
+  #   branches: [ main, develop ]
+  #   paths:
+  #     - 'UF-Zoom/docs/**'
+  #     - 'UF-Zoom/Slide-Oral.md'
+  #     - 'Themes/**'
+  #     - 'package.json'
+  workflow_dispatch: # Permet le déclenchement manuel uniquement
+    inputs:
+      force_rebuild:
+        description: 'Forcer la régénération des documents'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  NODE_VERSION: '20.x'
+  CACHE_KEY: node-${{ github.sha }}
+
+jobs:
+  build-and-docs:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 🚀 Checkout du code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Pour l'historique complet des commits
+      
+    - name: 📦 Setup Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: '**/package-lock.json'
+        
+    - name: 🔍 Vérification des prérequis
+      run: |
+        echo "🔍 Vérification des thèmes CSS..."
+        ls -la Themes/ | grep -E '\.css$'
+        echo ""
+        echo "🔍 Vérification des fichiers sources..."
+        ls -la UF-Zoom/docs/ | grep -E '\.md$'
+        ls -la UF-Zoom/ | grep -E 'Slide-Oral\.md$'
+        echo ""
+        echo "🔍 Vérification des scripts..."
+        ls -la UF-Zoom/ | grep -E 'generate-.*\.sh$'
+        
+    - name: 📦 Installation des dépendances
+      run: |
+        echo "📦 Installation des dépendances npm..."
+        npm ci --prefer-offline --no-audit
+        
+        echo "📦 Installation de Marp CLI..."
+        npm install -g @marp-team/marp-cli
+        
+        echo "✅ Dépendances installées"
+        
+    - name: 🏗️ Build du projet
+      run: |
+        echo "🚀 Build du projet..."
+        npm run build:frontend
+        npm run build:backend
+        echo "✅ Build terminé"
+        
+    - name: 📄 Génération des documents
+      run: |
+        echo "📄 Génération des documents..."
+        
+        # Créer les dossiers de sortie
+        mkdir -p UF-Zoom/docs/output UF-Zoom/output
+        
+        # Générer le PDF
+        echo "📄 Génération du PDF Dossier-Projet2.md..."
+        bash UF-Zoom/generate-dossier-pdf.sh
+        
+        # Générer les slides
+        echo "📄 Génération des slides Slide-Oral.md..."
+        bash UF-Zoom/generate-slide.sh
+        
+        echo "✅ Génération des documents terminée"
+        
+    - name: 🔍 Vérification des documents générés
+      run: |
+        echo "✅ Vérification des documents générés..."
+        echo ""
+        echo "--- PDF Dossier ---"
+        ls -la UF-Zoom/docs/output/ | grep -E '\.pdf$'
+        echo ""
+        echo "--- Slides ---"
+        ls -la UF-Zoom/output/ | grep -E 'Slide-Oral\.(html|pdf|pptx)$'
+        
+        # Vérifier les tailles
+        echo ""
+        echo "📊 Tailles des fichiers :"
+        if [ -f "UF-Zoom/docs/output/Dossier-Projet2.pdf" ]; then
+            echo "  - Dossier-Projet2.pdf: $(du -h UF-Zoom/docs/output/Dossier-Projet2.pdf | cut -f1)"
+        fi
+        if [ -f "UF-Zoom/output/Slide-Oral.pdf" ]; then
+            echo "  - Slide-Oral.pdf: $(du -h UF-Zoom/output/Slide-Oral.pdf | cut -f1)"
+        fi
+        
+    - name: 📤 Upload des documents générés
+      uses: actions/upload-artifact@v4
+      with:
+        name: documents-generes-${{ github.sha }}
+        path: |
+          UF-Zoom/docs/output/
+          UF-Zoom/output/
+        retention-days: 90
+        if-no-files-found: error
+        
+    - name: 💬 Commentaire automatique sur les PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          
+          let comment = '## 📄 Documents générés automatiquement\n\n';
+          comment += '✅ **Build réussi** avec génération automatique des documents\n\n';
+          
+          comment += '### 📁 Fichiers disponibles\n';
+          
+          // Vérifier le PDF du dossier
+          const dossierPdf = 'UF-Zoom/docs/output/Dossier-Projet2.pdf';
+          if (fs.existsSync(dossierPdf)) {
+            const stats = fs.statSync(dossierPdf);
+            const sizeInMB = (stats.size / (1024 * 1024)).toFixed(1);
+            comment += `- **📄 Dossier-Projet2.pdf** : \`${dossierPdf}\` (${sizeInMB} MB)\n`;
+          }
+          
+          // Vérifier les slides
+          const slidesDir = 'UF-Zoom/output';
+          if (fs.existsSync(slidesDir)) {
+            const files = fs.readdirSync(slidesDir);
+            files.forEach(file => {
+              if (file.match(/Slide-Oral\.(html|pdf|pptx)$/)) {
+                const filePath = path.join(slidesDir, file);
+                const stats = fs.statSync(filePath);
+                const sizeInMB = (stats.size / (1024 * 1024)).toFixed(1);
+                const extension = path.extname(file).toUpperCase();
+                comment += `- **📊 Slide ${extension}** : \`${filePath}\` (${sizeInMB} MB)\n`;
+              }
+            });
+          }
+          
+          comment += '\n### 🔄 Workflow\n';
+          comment += '1. 🏗️ Build du projet (frontend + backend)\n';
+          comment += '2. 📄 Génération automatique des documents\n';
+          comment += '3. 📤 Upload des artifacts\n';
+          comment += '4. 💬 Commentaire automatique\n\n';
+          
+          comment += '💡 **Ces documents sont générés automatiquement à chaque modification de la documentation.**\n\n';
+          comment += '🔗 **Artifacts disponibles dans l\'onglet Actions de cette PR**';
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+          
+    - name: 🏷️ Tag des versions
+      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+      run: |
+        echo "🏷️ Création des tags de version..."
+        
+        # Obtenir la version depuis package.json
+        VERSION=$(node -p "require('./package.json').version")
+        COMMIT_SHA=$(git rev-parse --short HEAD)
+        DATE=$(date +%Y%m%d)
+        
+        # Créer un tag unique
+        TAG="v${VERSION}-docs-${DATE}-${COMMIT_SHA}"
+        
+        echo "📝 Création du tag: $TAG"
+        git tag "$TAG"
+        git push origin "$TAG"
+        
+        echo "✅ Tag créé et poussé: $TAG"
+        
+    - name: 📊 Rapport de build
+      run: |
+        echo "📊 Génération du rapport de build..."
+        echo "Date: $(date)"
+        echo "Commit: ${{ github.sha }}"
+        echo "Branch: ${{ github.ref_name }}"
+        echo "Workflow: ${{ github.workflow }}"
+        echo "✅ Build terminé avec succès"
+        
+    - name: 📤 Upload du rapport
+      uses: actions/upload-artifact@v4
+      with:
+        name: rapport-build
+        path: build-docs-report.txt
+        retention-days: 90
+        
+    - name: 🎉 Notification de succès
+      if: success()
+      run: |
+        echo "🎉 Build et génération des documents terminés avec succès !"
+        echo "📄 Documents disponibles dans les artifacts GitHub Actions"
+        echo "📊 Rapport de build généré"
+        
+    - name: ❌ Notification d'échec
+      if: failure()
+      run: |
+        echo "❌ Échec du build ou de la génération des documents"
+        echo "📋 Vérifiez les logs pour plus de détails"
+        echo "🔧 Vérifiez les prérequis et la configuration" 
