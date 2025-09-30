@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "optimize-images": "node scripts/optimize-images.js",
     "dev": "concurrently \"npm run frontend\" \"npm run backend\" ",
     "frontend": "vite --port 3000",
     "backend": "NODE_OPTIONS='--max-old-space-size=8192' node backend/server.js",
@@ -11,8 +12,8 @@
     "build:frontend": "vite build",
     "build:backend": "tsc backend/server.ts --outDir backend --target es2020 --module commonjs",
     "lint": "eslint . --ext .ts,.tsx --ignore-pattern backend/",
-    "preview": "vite preview" 
-    },
+    "preview": "vite preview"
+  },
   "dependencies": {
     "@types/three": "^0.162.0",
     "axios": "^1.6.8",
@@ -31,7 +32,8 @@
     "react-dom": "^18.3.1",
     "recharts": "^2.12.2",
     "three": "^0.162.0",
-    "victory": "^37.0.2"
+    "victory": "^37.0.2",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
@@ -52,6 +54,7 @@
     "husky": "^9.1.7",
     "nodemon": "^3.1.0",
     "postcss": "^8.4.35",
+    "sharp": "^0.34.4",
     "tailwindcss": "^3.4.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.3",
