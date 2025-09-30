@@ -216,32 +216,52 @@ export default function App() {
     return () => po.disconnect()
   }, [])
 
+  // Enregistrement du Service Worker
   useEffect(() => {
-    if (intervalRef.current) return
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .then(registration => {
+          console.log('Service Worker enregistré avec succès:', registration);
+        })
+        .catch(error => {
+          console.error('Erreur lors de l\'enregistrement du Service Worker:', error);
+        });
+    }
+  }, []);
 
-    intervalRef.current = window.setInterval(async () => {
-      for (let i = 0; i < 2; i++) {
-        fetch(`http://localhost:5001/api/payload?${Date.now()}_${i}`)
-      }
-
+  // Configuration de la connexion WebSocket
+  useEffect(() => {
+    // Création de la connexion WebSocket
+    const ws = new WebSocket('ws://localhost:5001');
+    
+    // Gestion des messages WebSocket
+    ws.onmessage = (event) => {
       try {
-        const { memory, load, rps } = await fetch('http://localhost:5001/api/server', {
-          cache: 'no-store'
-        }).then(r => r.json())
-
+        const { memory, load, rps } = JSON.parse(event.data);
         setStats(s => ({
           ...s,
           memory: Math.ceil(memory / 1_048_576),
           load,
           rps
-        }))
+        }));
       } catch (err) {
-        console.warn('Erreur lors du fetch des stats serveur', err)
+        console.warn('Erreur lors du traitement des données WebSocket:', err);
       }
-    }, 1_000)
+    };
 
-    return () => clearInterval(intervalRef.current)
-  }, [])
+    // Gestion de la reconnexion en cas de déconnexion
+    ws.onclose = () => {
+      console.log('WebSocket déconnecté. Tentative de reconnexion dans 5s...');
+      setTimeout(() => {
+        setStats(s => ({ ...s, memory: 0, load: 0, rps: 0 }));
+      }, 5000);
+    };
+
+    // Nettoyage à la destruction du composant
+    return () => {
+      ws.close();
+    };
+  }, []);
 
   if (!ready)
     return (
