@@ -71,24 +71,49 @@ export default function App() {
   })
   const [ready, setReady] = useState(false)
 
+  // 🌱 Éco-conception : animation 3D désactivée par défaut, préférence persistée
+  const [is3DEnabled, setIs3DEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('3d-enabled') === 'true'
+    } catch {
+      return false
+    }
+  })
+
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
+  const animFrameRef = useRef<number>()
   const injectedRef = useRef(false)
   const intervalRef = useRef<number>()
 
+  // Persiste le choix utilisateur
+  useEffect(() => {
+    try {
+      localStorage.setItem('3d-enabled', String(is3DEnabled))
+    } catch {
+      // localStorage indisponible, on continue sans persister
+    }
+  }, [is3DEnabled])
+
+  // 🌱 Éco-conception : Three.js n'est instancié que si l'utilisateur l'active
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas) return
+    if (!canvas || !is3DEnabled) return
+
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.1, 1_000)
     camera.position.z = 30
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
+    rendererRef.current = renderer
     renderer.setSize(canvas.clientWidth || 640, canvas.clientHeight || 480)
     renderer.setPixelRatio(window.devicePixelRatio)
+
     const ambient = new THREE.AmbientLight(0xffffff, 0.3)
     scene.add(ambient)
     const dir = new THREE.DirectionalLight(0xffffff, 0.8)
     dir.position.set(25, 25, 25)
     scene.add(dir)
+
     for (let i = 0; i < 20; i++) {
       const mat = new THREE.MeshPhongMaterial({ color: Math.random() * 0xffffff, shininess: 80 })
       const geo = new THREE.BoxGeometry(1 + Math.random(), 1 + Math.random(), 1 + Math.random())
@@ -96,6 +121,7 @@ export default function App() {
       cube.position.set((Math.random() - 0.5) * 50, (Math.random() - 0.5) * 50, (Math.random() - 0.5) * 50)
       scene.add(cube)
     }
+
     const animate = () => {
       let i = 0
       scene.traverse((o: any) => {
@@ -106,26 +132,33 @@ export default function App() {
         i++
       })
       renderer.render(scene, camera)
-      requestAnimationFrame(animate)
+      animFrameRef.current = requestAnimationFrame(animate)
     }
     animate()
+
     const onResize = _.throttle(() => {
       camera.aspect = canvas.clientWidth / canvas.clientHeight
       camera.updateProjectionMatrix()
       renderer.setSize(canvas.clientWidth, canvas.clientHeight)
     }, 200)
     window.addEventListener('resize', onResize)
+
+    // Nettoyage complet quand l'utilisateur désactive ou démonte le composant
     return () => {
       window.removeEventListener('resize', onResize)
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
       renderer.dispose()
+      rendererRef.current = null
       scene.traverse((o: any) => {
         if (o.geometry) o.geometry.dispose()
         if (o.material) {
-          Array.isArray(o.material) ? o.material.forEach((m: any) => m.dispose()) : o.material.dispose()
+          Array.isArray(o.material)
+            ? o.material.forEach((m: any) => m.dispose())
+            : o.material.dispose()
         }
       })
     }
-  }, [])
+  }, [is3DEnabled]) // ← se relance uniquement quand l'utilisateur bascule
 
   useEffect(() => {
     if (injectedRef.current) return
@@ -147,28 +180,19 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const startTime = performance.now();
-
+    const startTime = performance.now()
     const computeStats = () => {
-      const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
-      const resources = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
-
-      if (!nav) return;
-
-      const totalWeight = nav.transferSize + resources.reduce((sum, r) => sum + (r.transferSize || 0), 0);
-      const jsWeight = resources.filter(r => r.initiatorType === 'script').reduce((sum, r) => sum + (r.transferSize || 0), 0);
-      const cssWeight = resources.filter(r => r.initiatorType === 'link').reduce((sum, r) => sum + (r.transferSize || 0), 0);
+      const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
+      const resources = performance.getEntriesByType('resource') as PerformanceResourceTiming[]
+      if (!nav) return
+      const totalWeight = nav.transferSize + resources.reduce((sum, r) => sum + (r.transferSize || 0), 0)
+      const jsWeight = resources.filter(r => r.initiatorType === 'script').reduce((sum, r) => sum + (r.transferSize || 0), 0)
+      const cssWeight = resources.filter(r => r.initiatorType === 'link').reduce((sum, r) => sum + (r.transferSize || 0), 0)
       const imgWeight = resources
-        .filter(
-          r =>
-            r.initiatorType === 'img' ||
-            r.initiatorType === 'css' ||
-            /\.(jpg|jpeg|png|gif|webp)$/i.test(r.name)
-        )
-        .reduce((sum, r) => sum + (r.transferSize || 0), 0);
-      const totalEncoded = nav.encodedBodySize + resources.reduce((sum, r) => sum + (r.encodedBodySize || 0), 0);
-      const cacheRatio = totalEncoded ? 1 - totalWeight / totalEncoded : 0;
-
+        .filter(r => r.initiatorType === 'img' || r.initiatorType === 'css' || /\.(jpg|jpeg|png|gif|webp)$/i.test(r.name))
+        .reduce((sum, r) => sum + (r.transferSize || 0), 0)
+      const totalEncoded = nav.encodedBodySize + resources.reduce((sum, r) => sum + (r.encodedBodySize || 0), 0)
+      const cacheRatio = totalEncoded ? 1 - totalWeight / totalEncoded : 0
       setStats(s => ({
         ...s,
         bundle: nav.transferSize,
@@ -180,30 +204,26 @@ export default function App() {
         img: imgWeight || s.img,
         cache: cacheRatio,
         pl: Math.round(performance.now() - startTime)
-      }));
-      setReady(true);
-    };
-
-    if (document.readyState === 'complete') {
-      computeStats();
-    } else {
-      window.addEventListener('load', computeStats, { once: true });
+      }))
+      setReady(true)
     }
-
-    // Ajout du rafraîchissement périodique
-    const interval = setInterval(computeStats, 2000);
-
-    return () => clearInterval(interval);
-  }, []);
+    if (document.readyState === 'complete') {
+      computeStats()
+    } else {
+      window.addEventListener('load', computeStats, { once: true })
+    }
+    const interval = setInterval(computeStats, 2000)
+    return () => clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     const po = new PerformanceObserver(list => {
       const res = list.getEntries() as PerformanceResourceTiming[]
       const added = res.reduce((a, b) => a + (b.transferSize || 0), 0)
       const jsAdd = res.filter(r => r.initiatorType === 'script').reduce((a, b) => a + (b.transferSize || 0), 0)
-      const cssAdd = res.filter(r => r.initiatorType === 'link' || /\.css$/i.test(r.name)).reduce((a, b) => a + (b.transferSize || 0), 0) 
-      const isImg = (r: PerformanceResourceTiming) => r.initiatorType === 'img' || r.initiatorType === 'css' || /\.(avif|jpe?g|png|gif|webp|svg)$/i.test(r.name);
-      const imgAdd = res.filter(isImg).reduce((a, b) => a + (b.transferSize || 0), 0);
+      const cssAdd = res.filter(r => r.initiatorType === 'link' || /\.css$/i.test(r.name)).reduce((a, b) => a + (b.transferSize || 0), 0)
+      const isImg = (r: PerformanceResourceTiming) => r.initiatorType === 'img' || r.initiatorType === 'css' || /\.(avif|jpe?g|png|gif|webp|svg)$/i.test(r.name)
+      const imgAdd = res.filter(isImg).reduce((a, b) => a + (b.transferSize || 0), 0)
       const encAdd = res.reduce((a, b) => a + (b.encodedBodySize || 0), 0)
       setStats(s => {
         const weight = s.weight + added
@@ -218,28 +238,17 @@ export default function App() {
 
   useEffect(() => {
     if (intervalRef.current) return
-
     intervalRef.current = window.setInterval(async () => {
       for (let i = 0; i < 2; i++) {
         fetch(`http://localhost:5001/api/payload?${Date.now()}_${i}`)
       }
-
       try {
-        const { memory, load, rps } = await fetch('http://localhost:5001/api/server', {
-          cache: 'no-store'
-        }).then(r => r.json())
-
-        setStats(s => ({
-          ...s,
-          memory: Math.ceil(memory / 1_048_576),
-          load,
-          rps
-        }))
+        const { memory, load, rps } = await fetch('http://localhost:5001/api/server', { cache: 'no-store' }).then(r => r.json())
+        setStats(s => ({ ...s, memory: Math.ceil(memory / 1_048_576), load, rps }))
       } catch (err) {
         console.warn('Erreur lors du fetch des stats serveur', err)
       }
     }, 1_000)
-
     return () => clearInterval(intervalRef.current)
   }, [])
 
@@ -265,6 +274,7 @@ export default function App() {
           </h1>
           <p className="text-xl text-slate-300 max-w-3xl mx-auto">Plateforme d'entraînement avancée pour l'optimisation web et l'éco-conception</p>
         </header>
+
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 mb-16">
           <Card icon={<Database className="w-8 h-8 text-purple-400" />} title="Poids HTML" value={`${(stats.bundle / 1_024).toFixed(0)} kB`} tone={color(stats.bundle, limits.weight)} tip="transferSize du document" />
           <Card icon={<Globe className="w-8 h-8 text-blue-400" />} title="Poids page" value={`${(stats.weight / 1_024).toFixed(0)} kB`} tone={color(stats.weight, limits.weight)} tip="somme transferSize" />
@@ -279,15 +289,53 @@ export default function App() {
           <Card icon={<Activity className="w-8 h-8 text-lime-400" />} title="RPS" value={stats.rps} tone="bg-white/10 border-white/20" />
           <Card icon={<Timer className="w-8 h-8 text-yellow-400" />} title="Load page" value={`${stats.pl} ms`} tone="bg-white/10 border-white/20" />
         </section>
+
         <section className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20 mb-16">
-          <div className="flex items-center gap-4 mb-6">
-            <Zap className="w-8 h-8 text-yellow-400" />
-            <h2 className="text-2xl font-bold text-white">Visualisation 3D</h2>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-4">
+              <Zap className="w-8 h-8 text-yellow-400" />
+              <h2 className="text-2xl font-bold text-white">Visualisation 3D</h2>
+            </div>
+
+            {/* 🌱 Bouton d'activation éco-responsable */}
+            <button
+              onClick={() => setIs3DEnabled(v => !v)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-semibold transition-all duration-200 ${
+                is3DEnabled
+                  ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-300 hover:bg-yellow-500/30'
+                  : 'bg-white/10 border-white/20 text-slate-300 hover:bg-white/15'
+              }`}
+              aria-pressed={is3DEnabled}
+              title={is3DEnabled ? 'Désactiver l\'animation 3D pour économiser de l\'énergie' : 'Activer l\'animation 3D'}
+            >
+              <span>{is3DEnabled ? '⏸' : '▶'}</span>
+              <span>{is3DEnabled ? 'Désactiver' : 'Activer'} la 3D</span>
+              {!is3DEnabled && (
+                <span className="ml-1 text-xs text-emerald-400 font-normal">🌱 éco</span>
+              )}
+            </button>
           </div>
-          <div className="flex justify-center">
-            <canvas ref={canvasRef} className="rounded-xl border border-white/20 shadow-2xl w-full h-96" />
-          </div>
-          <p className="text-slate-300 text-center mt-4">500 cubes tournants en temps réel</p>
+
+          {is3DEnabled ? (
+            <div className="flex justify-center">
+              <canvas ref={canvasRef} className="rounded-xl border border-white/20 shadow-2xl w-full h-96" />
+            </div>
+          ) : (
+            /* Placeholder sobre quand la 3D est désactivée */
+            <div className="flex flex-col items-center justify-center h-96 rounded-xl border border-white/10 bg-white/5 gap-4">
+              <span className="text-5xl">🌱</span>
+              <p className="text-slate-400 text-center max-w-sm">
+                Animation 3D désactivée pour réduire la consommation CPU et GPU.
+              </p>
+              <p className="text-slate-500 text-sm">
+                Cliquez sur <strong className="text-slate-400">Activer la 3D</strong> pour la lancer à la demande.
+              </p>
+            </div>
+          )}
+
+          <p className="text-slate-300 text-center mt-4">
+            {is3DEnabled ? '20 cubes tournants en temps réel' : 'Three.js non chargé — ~600 kB économisés'}
+          </p>
         </section>
       </div>
     </div>
